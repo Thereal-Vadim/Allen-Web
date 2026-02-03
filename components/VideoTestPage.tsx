@@ -1,14 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ref, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 
 export const VideoTestPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [firebaseFileName, setFirebaseFileName] = useState("hero-video.mp4");
 
   const addLog = (msg: string) => {
     setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
   };
 
-  const LOCAL_VIDEO = "/video.mp4";
+  const LOCAL_VIDEO = "/assets/hero-video.mp4";
   const FALLBACK_LINK = "https://assets.mixkit.co/videos/preview/mixkit-ink-swirling-in-water-346-large.mp4";
 
   // --- HANDLERS ---
@@ -43,6 +46,28 @@ export const VideoTestPage: React.FC = () => {
       }
   };
 
+  const loadFromFirebase = async () => {
+      addLog(`🔥 Connecting to Firebase Storage...`);
+      addLog(`🔍 Looking for file: '${firebaseFileName}'`);
+      
+      try {
+          const storageRef = ref(storage, firebaseFileName);
+          const url = await getDownloadURL(storageRef);
+          addLog(`✅ SUCCESS: Firebase URL retrieved!`);
+          addLog(`🔗 URL: ${url.substring(0, 50)}...`);
+          
+          if (videoRef.current) {
+              videoRef.current.src = url;
+              videoRef.current.load();
+              videoRef.current.play().catch(e => addLog(`❌ Play Error: ${e.message}`));
+          }
+      } catch (error: any) {
+          addLog(`❌ FIREBASE ERROR: ${error.code || 'Unknown'}`);
+          addLog(`❓ Tip: Check 'firebase.ts' config or Bucket CORS rules.`);
+          console.error(error);
+      }
+  };
+
   // Video Event Listeners
   useEffect(() => {
     const v = videoRef.current;
@@ -50,7 +75,6 @@ export const VideoTestPage: React.FC = () => {
 
     const onPlay = () => addLog("▶️ PLAYER STATE: PLAYING");
     
-    // FIX: Do not log the event object 'e' itself
     const onError = (e: Event) => {
         const error = (e.target as HTMLVideoElement).error;
         if(error) {
@@ -71,38 +95,58 @@ export const VideoTestPage: React.FC = () => {
   return (
     <div className="w-full min-h-screen bg-[#050505] flex flex-col items-center pt-32 pb-20 text-white z-[60] relative font-mono">
       <h1 className="text-2xl mb-8 font-bold uppercase font-['Unbounded'] text-yellow-500 tracking-wider text-center">
-        Video Diagnostic Lab v9
+        Video Diagnostic Lab v9.2 (Firebase)
       </h1>
       
       {/* TOOLBAR */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-5xl px-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full max-w-6xl px-4 mb-8">
         
+        {/* TEST: FIREBASE */}
+        <div className="border border-orange-500/50 p-4 rounded bg-[#1a0a00]">
+            <h3 className="font-bold text-xs mb-2 text-orange-500">METHOD 1: FIREBASE STORAGE</h3>
+            <div className="flex gap-2 mb-2">
+                <input 
+                    type="text" 
+                    value={firebaseFileName}
+                    onChange={(e) => setFirebaseFileName(e.target.value)}
+                    className="w-full bg-black border border-orange-500/30 text-[10px] px-2 py-1 text-orange-200 outline-none"
+                    placeholder="filename.mp4"
+                />
+            </div>
+            <button 
+                onClick={loadFromFirebase}
+                className="w-full py-2 text-xs font-bold bg-orange-900/30 border border-orange-500 text-orange-400 hover:bg-orange-600 hover:text-white transition-all"
+            >
+                FETCH FROM CLOUD
+            </button>
+        </div>
+
         {/* TEST: LOCAL */}
         <div className="border border-white/20 p-4 rounded bg-[#111]">
-            <h3 className="font-bold text-xs mb-2 text-purple-400">METHOD 1: PROJECT FILE</h3>
+            <h3 className="font-bold text-xs mb-2 text-purple-400">METHOD 2: PROJECT FILE</h3>
             <button 
                 onClick={loadLocalPath}
                 className="w-full py-2 text-xs font-bold border border-purple-500 text-purple-400 hover:bg-purple-900 transition-all"
             >
-                LOAD /video.mp4
+                LOAD {LOCAL_VIDEO}
             </button>
-            <p className="text-[10px] text-gray-500 mt-2">Requires file in /public folder</p>
+            <p className="text-[10px] text-gray-500 mt-2">Requires file in /public/assets folder</p>
         </div>
 
         {/* TEST: FALLBACK */}
         <div className="border-2 border-green-500 p-4 rounded bg-[#0a1a0a]">
-            <h3 className="font-bold text-xs mb-2 text-green-500">METHOD 2: CDN FALLBACK</h3>
+            <h3 className="font-bold text-xs mb-2 text-green-500">METHOD 3: CDN FALLBACK</h3>
             <button 
                 onClick={loadFallback}
                 className="w-full py-2 text-xs font-bold border border-green-500 text-green-500 hover:bg-green-900 transition-all"
             >
-                LOAD WORKING VIDEO
+                LOAD EXTERNAL CDN
             </button>
         </div>
 
         {/* TEST: BROWSE */}
         <div className="border border-white/20 p-4 rounded bg-[#111]">
-            <h3 className="font-bold text-xs mb-2 text-blue-500">METHOD 3: BROWSE FILE</h3>
+            <h3 className="font-bold text-xs mb-2 text-blue-500">METHOD 4: BROWSE FILE</h3>
             <label className="cursor-pointer w-full py-2 text-xs font-bold border border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-black transition-all flex justify-center items-center">
                 <span>📂 BROWSE FILE</span>
                 <input type="file" onChange={handleFileUpload} accept="video/*" className="hidden" />
@@ -138,6 +182,7 @@ export const VideoTestPage: React.FC = () => {
                     <div key={i} className={`${
                         log.includes("SUCCESS") || log.includes("PLAYING") ? "text-green-400 font-bold" :
                         log.includes("FAILURE") || log.includes("Error") || log.includes("CRITICAL") ? "text-red-400 font-bold" :
+                        log.includes("FIREBASE") ? "text-orange-400 font-bold" :
                         log.includes("EXPLANATION") ? "text-yellow-400" :
                         "text-gray-400"
                     }`}>

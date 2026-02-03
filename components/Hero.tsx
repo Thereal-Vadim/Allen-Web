@@ -1,7 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useGSAP } from '@gsap/react';
+import { ref, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -9,13 +11,31 @@ export const Hero: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoSrc, setVideoSrc] = useState<string>("");
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
 
-  // PRIMARY: Local file (You must place 'video.mp4' in your public folder)
-  const LOCAL_VIDEO = "/video.mp4";
+  // CONFIG: Name of file in Firebase Storage Bucket
+  const FIREBASE_FILE_NAME = "hero-video.mp4";
   
-  // FALLBACK: Reliable CDN link if local file is missing
+  // FALLBACK: Reliable CDN link if Firebase fails or is not configured
   const FALLBACK_LINK = "https://assets.mixkit.co/videos/preview/mixkit-ink-swirling-in-water-346-large.mp4";
+
+  useEffect(() => {
+    const loadVideo = async () => {
+      try {
+        // Attempt to get the URL from Firebase
+        const storageRef = ref(storage, FIREBASE_FILE_NAME);
+        const url = await getDownloadURL(storageRef);
+        setVideoSrc(url);
+      } catch (error) {
+        console.warn("Firebase Load Failed (Check firebase.ts config):", error);
+        // On error, use fallback
+        setVideoSrc(FALLBACK_LINK);
+      }
+    };
+
+    loadVideo();
+  }, []);
 
   useGSAP(() => {
     // Parallax Effect
@@ -34,16 +54,12 @@ export const Hero: React.FC = () => {
   }, { scope: containerRef });
 
   const handleVideoError = () => {
-    // FIX: Do NOT pass the 'event' object to console functions to prevent Circular JSON errors.
-    console.warn("⚠️ Local 'video.mp4' not found or failed to load. Switching to fallback.");
+    console.warn(`⚠️ Video source '${videoSrc}' failed to load. Switching to safety fallback.`);
     
     // Prevent infinite loop
     if (videoRef.current && videoRef.current.src !== FALLBACK_LINK) {
-        videoRef.current.src = FALLBACK_LINK;
+        setVideoSrc(FALLBACK_LINK);
         videoRef.current.load();
-        videoRef.current.play().catch(() => {
-            console.warn("Autoplay blocked for fallback.");
-        });
     }
   };
 
@@ -54,20 +70,21 @@ export const Hero: React.FC = () => {
     >
       {/* FULLSCREEN BACKGROUND VIDEO */}
       <div className="absolute inset-0 w-full h-full z-0">
-        <video 
-          ref={videoRef}
-          autoPlay 
-          muted 
-          loop 
-          playsInline
-          onError={handleVideoError}
-          onLoadedData={() => setIsVideoLoaded(true)}
-          className={`w-full h-full object-cover transition-opacity duration-1000 ${isVideoLoaded ? 'opacity-50' : 'opacity-0'}`} 
-        >
-          {/* Attempt to load local file first */}
-          <source src={LOCAL_VIDEO} type="video/mp4" />
-          Your browser does not support the video tag.
-        </video>
+        {videoSrc && (
+          <video 
+            ref={videoRef}
+            src={videoSrc}
+            autoPlay 
+            muted 
+            loop 
+            playsInline
+            onError={handleVideoError}
+            onLoadedData={() => setIsVideoLoaded(true)}
+            className={`w-full h-full object-cover transition-opacity duration-1000 ${isVideoLoaded ? 'opacity-50' : 'opacity-0'}`} 
+          >
+            Your browser does not support the video tag.
+          </video>
+        )}
         
         {/* Gradient Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-transparent opacity-90"></div>
