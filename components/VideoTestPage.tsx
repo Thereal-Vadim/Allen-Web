@@ -1,196 +1,273 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ref, getDownloadURL } from 'firebase/storage';
-import { storage } from '../firebase';
+import React, { useState, useRef, useEffect } from 'react';
+import gsap from 'gsap';
+
+interface VideoMetrics {
+  fileName: string;
+  fileSizeMB: number;
+  resolution: string;
+  loadTimeMs: number; // Time to 'loadeddata'
+  renderTimeMs: number; // Time to 'canplay'
+  duration: number;
+  score: 'PERFECT' | 'GOOD' | 'HEAVY' | 'CRITICAL';
+}
 
 export const VideoTestPage: React.FC = () => {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<VideoMetrics | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [isHeroMode, setIsHeroMode] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
-  const [firebaseFileName, setFirebaseFileName] = useState("hero-video.mp4");
+  
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const startTimeRef = useRef<number>(0);
 
-  const addLog = (msg: string) => {
-    setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
-  };
+  const addLog = (msg: string) => setLogs(prev => [`> ${msg}`, ...prev]);
 
-  const LOCAL_VIDEO = "/assets/hero-video.mp4";
-  const FALLBACK_LINK = "https://assets.mixkit.co/videos/preview/mixkit-ink-swirling-in-water-346-large.mp4";
-
-  // --- HANDLERS ---
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-        const objectUrl = URL.createObjectURL(file);
-        addLog(`📂 LOADED LOCAL FILE: ${file.name} (${(file.size/1024/1024).toFixed(2)}MB)`);
-        if (videoRef.current) {
-            videoRef.current.src = objectUrl;
-            videoRef.current.load();
-            videoRef.current.play().catch(e => addLog(`❌ Play Error: ${e.message}`));
-        }
+    if (!file) return;
+    runTest(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('video/')) {
+        runTest(file);
     }
   };
 
-  const loadLocalPath = () => {
-      addLog(`🏠 Attempting Local Path: ${LOCAL_VIDEO}`);
-      if (videoRef.current) {
-          videoRef.current.src = LOCAL_VIDEO;
-          videoRef.current.load();
-          videoRef.current.play().catch(e => addLog(`❌ Play Error: ${e.message}`));
-      }
-  };
+  const runTest = (file: File) => {
+      // Reset
+      if (videoSrc) URL.revokeObjectURL(videoSrc);
+      setMetrics(null);
+      setLogs([]);
+      setIsTesting(true);
+      setIsHeroMode(false);
 
-  const loadFallback = () => {
-      addLog(`🛡️ Loading Safe Fallback: ${FALLBACK_LINK}`);
-      if (videoRef.current) {
-          videoRef.current.src = FALLBACK_LINK;
-          videoRef.current.load();
-          videoRef.current.play().catch(e => addLog(`❌ Play Error: ${e.message}`));
-      }
-  };
+      const sizeMB = file.size / (1024 * 1024);
+      addLog(`Initializing test for: ${file.name}`);
+      addLog(`File Size: ${sizeMB.toFixed(2)} MB`);
 
-  const loadFromFirebase = async () => {
-      addLog(`🔥 Connecting to Firebase Storage...`);
-      addLog(`🔍 Looking for file: '${firebaseFileName}'`);
+      // Create Object URL
+      const url = URL.createObjectURL(file);
+      startTimeRef.current = performance.now();
+      setVideoSrc(url);
       
-      try {
-          const storageRef = ref(storage, firebaseFileName);
-          const url = await getDownloadURL(storageRef);
-          addLog(`✅ SUCCESS: Firebase URL retrieved!`);
-          addLog(`🔗 URL: ${url.substring(0, 50)}...`);
+      // Store temp metrics
+      setMetrics({
+          fileName: file.name,
+          fileSizeMB: parseFloat(sizeMB.toFixed(2)),
+          resolution: 'Analyzing...',
+          loadTimeMs: 0,
+          renderTimeMs: 0,
+          duration: 0,
+          score: 'GOOD' // default
+      });
+  };
+
+  const handleLoadedData = () => {
+     const now = performance.now();
+     const loadTime = Math.round(now - startTimeRef.current);
+     addLog(`Data Loaded in: ${loadTime}ms`);
+     
+     if (videoRef.current && metrics) {
+         setMetrics(prev => prev ? ({
+             ...prev,
+             loadTimeMs: loadTime,
+             resolution: `${videoRef.current!.videoWidth} x ${videoRef.current!.videoHeight}`,
+             duration: videoRef.current!.duration
+         }) : null);
+     }
+  };
+
+  const handleCanPlay = () => {
+      const now = performance.now();
+      const totalTime = Math.round(now - startTimeRef.current);
+      addLog(`Ready to Play (TTFF) in: ${totalTime}ms`);
+      setIsTesting(false);
+
+      if (metrics) {
+          // Calculate Score
+          let score: VideoMetrics['score'] = 'PERFECT';
+          const size = metrics.fileSizeMB;
           
-          if (videoRef.current) {
-              videoRef.current.src = url;
-              videoRef.current.load();
-              videoRef.current.play().catch(e => addLog(`❌ Play Error: ${e.message}`));
-          }
-      } catch (error: any) {
-          addLog(`❌ FIREBASE ERROR: ${error.code || 'Unknown'}`);
-          addLog(`❓ Tip: Check 'firebase.ts' config or Bucket CORS rules.`);
-          console.error(error);
+          if (size > 30 || totalTime > 200) score = 'CRITICAL';
+          else if (size > 15 || totalTime > 100) score = 'HEAVY';
+          else if (size > 5) score = 'GOOD';
+          
+          addLog(`BENCHMARK COMPLETE. SCORE: ${score}`);
+
+          setMetrics(prev => prev ? ({
+              ...prev,
+              renderTimeMs: totalTime,
+              score: score
+          }) : null);
       }
   };
 
-  // Video Event Listeners
-  useEffect(() => {
-    const v = videoRef.current;
-    if(!v) return;
-
-    const onPlay = () => addLog("▶️ PLAYER STATE: PLAYING");
-    
-    const onError = (e: Event) => {
-        const error = (e.target as HTMLVideoElement).error;
-        if(error) {
-             addLog(`❌ PLAYER ERROR: Code ${error.code} - ${error.message}`);
-        } else {
-             addLog(`❌ PLAYER ERROR: Unknown error`);
-        }
-    };
-    
-    v.addEventListener('playing', onPlay);
-    v.addEventListener('error', onError);
-    return () => {
-        v.removeEventListener('playing', onPlay);
-        v.removeEventListener('error', onError);
-    };
-  }, []);
+  // Color helpers
+  const getScoreColor = (score: string) => {
+      switch(score) {
+          case 'PERFECT': return 'text-[#28C840] border-[#28C840]';
+          case 'GOOD': return 'text-[#FEBC2E] border-[#FEBC2E]';
+          case 'HEAVY': return 'text-orange-500 border-orange-500';
+          case 'CRITICAL': return 'text-[#FF5F57] border-[#FF5F57]';
+          default: return 'text-white border-white';
+      }
+  };
 
   return (
-    <div className="w-full min-h-screen bg-[#050505] flex flex-col items-center pt-32 pb-20 text-white z-[60] relative font-mono">
-      <h1 className="text-2xl mb-8 font-bold uppercase font-['Unbounded'] text-yellow-500 tracking-wider text-center">
-        Video Diagnostic Lab v9.2 (Firebase)
-      </h1>
+    <div className={`w-full min-h-screen bg-[#050505] flex flex-col pt-24 pb-20 font-mono transition-colors duration-500 ${isHeroMode ? 'bg-black' : ''}`}>
       
-      {/* TOOLBAR */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full max-w-6xl px-4 mb-8">
+      {/* HEADER */}
+      {!isHeroMode && (
+          <div className="px-4 md:px-10 mb-10 flex flex-col md:flex-row justify-between items-end border-b border-[#222] pb-6">
+            <div>
+                <h1 className="text-3xl md:text-5xl font-['Unbounded'] font-bold uppercase text-[#f4f4f2]">Performance Lab</h1>
+                <p className="text-[#666] text-xs uppercase mt-2 tracking-widest">Video Benchmark & Optimization Tool</p>
+            </div>
+            <div className="text-right mt-4 md:mt-0">
+                <div className="text-[10px] text-[#444] uppercase mb-1">Target Metrics (Hero)</div>
+                <div className="flex gap-4 text-xs font-bold text-[#666]">
+                    <span>SIZE: &lt; 15MB</span>
+                    <span>TTFF: &lt; 100ms</span>
+                    <span>RES: 1080p</span>
+                </div>
+            </div>
+          </div>
+      )}
+
+      {/* MAIN LAYOUT */}
+      <div className={`flex flex-col lg:flex-row gap-10 px-4 md:px-10 flex-1 ${isHeroMode ? 'fixed inset-0 z-[2000] bg-black p-0 gap-0' : ''}`}>
         
-        {/* TEST: FIREBASE */}
-        <div className="border border-orange-500/50 p-4 rounded bg-[#1a0a00]">
-            <h3 className="font-bold text-xs mb-2 text-orange-500">METHOD 1: FIREBASE STORAGE</h3>
-            <div className="flex gap-2 mb-2">
-                <input 
-                    type="text" 
-                    value={firebaseFileName}
-                    onChange={(e) => setFirebaseFileName(e.target.value)}
-                    className="w-full bg-black border border-orange-500/30 text-[10px] px-2 py-1 text-orange-200 outline-none"
-                    placeholder="filename.mp4"
-                />
-            </div>
-            <button 
-                onClick={loadFromFirebase}
-                className="w-full py-2 text-xs font-bold bg-orange-900/30 border border-orange-500 text-orange-400 hover:bg-orange-600 hover:text-white transition-all"
-            >
-                FETCH FROM CLOUD
-            </button>
+        {/* LEFT: DROP ZONE / PLAYER */}
+        <div className={`relative transition-all duration-500 ${isHeroMode ? 'w-full h-full' : 'w-full lg:w-2/3 aspect-video bg-[#111] border border-[#333] rounded-sm overflow-hidden group'}`}>
+            
+            {/* HERO MODE TOGGLE (Only visible if video loaded and NOT in hero mode already) */}
+            {videoSrc && !isHeroMode && (
+                <button 
+                    onClick={() => setIsHeroMode(true)}
+                    className="absolute top-4 right-4 z-30 bg-black/80 backdrop-blur border border-[#333] text-[#f4f4f2] text-[10px] uppercase px-3 py-2 hover:bg-[#f4f4f2] hover:text-black transition-all"
+                >
+                    Simulate Hero View ↗
+                </button>
+            )}
+
+            {/* EXIT HERO MODE */}
+            {isHeroMode && (
+                <div className="absolute top-10 right-10 z-[3000]">
+                    <button 
+                        onClick={() => setIsHeroMode(false)}
+                        className="bg-white text-black font-bold uppercase text-xs px-6 py-3 rounded-full hover:scale-105 transition-transform"
+                    >
+                        Close Preview
+                    </button>
+                </div>
+            )}
+
+            {/* DROP ZONE (Hidden if Playing) */}
+            {!videoSrc && (
+                <div 
+                    className="absolute inset-0 flex flex-col items-center justify-center border-2 border-dashed border-[#333] m-4 hover:border-[#f4f4f2] hover:bg-[#1a1a1a] transition-all cursor-pointer"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleDrop}
+                >
+                    <input 
+                        type="file" 
+                        accept="video/*" 
+                        onChange={handleFileUpload} 
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <div className="text-4xl mb-4 opacity-50">📥</div>
+                    <div className="font-['Unbounded'] font-bold text-xl uppercase text-[#f4f4f2]">Drop Video Here</div>
+                    <div className="font-mono text-xs text-[#666] mt-2 uppercase">or click to browse</div>
+                </div>
+            )}
+
+            {/* VIDEO PLAYER */}
+            {videoSrc && (
+                <>
+                    <video
+                        ref={videoRef}
+                        src={videoSrc}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        onLoadedData={handleLoadedData}
+                        onCanPlay={handleCanPlay}
+                        className={`w-full h-full object-cover ${isTesting ? 'opacity-50 blur-sm' : 'opacity-100'} transition-all duration-300`}
+                    />
+                    
+                    {/* HERO OVERLAY SIMULATION */}
+                    {isHeroMode && (
+                        <div className="absolute inset-0 pointer-events-none z-10">
+                            {/* Gradient */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-transparent opacity-90" />
+                            {/* Text */}
+                            <div className="absolute bottom-0 left-0 p-4 md:p-10 w-full">
+                                <h1 className="text-[11vw] leading-[0.8] font-[900] uppercase text-[#f4f4f2] mix-blend-difference mb-10">
+                                    VIDEO<br/>PRODUCER
+                                </h1>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
         </div>
 
-        {/* TEST: LOCAL */}
-        <div className="border border-white/20 p-4 rounded bg-[#111]">
-            <h3 className="font-bold text-xs mb-2 text-purple-400">METHOD 2: PROJECT FILE</h3>
-            <button 
-                onClick={loadLocalPath}
-                className="w-full py-2 text-xs font-bold border border-purple-500 text-purple-400 hover:bg-purple-900 transition-all"
-            >
-                LOAD {LOCAL_VIDEO}
-            </button>
-            <p className="text-[10px] text-gray-500 mt-2">Requires file in /public/assets folder</p>
-        </div>
+        {/* RIGHT: METRICS PANEL (Hidden in Hero Mode) */}
+        {!isHeroMode && (
+            <div className="w-full lg:w-1/3 flex flex-col gap-6">
+                
+                {/* 1. SCORECARD */}
+                <div className={`bg-[#111] border p-6 flex flex-col items-center justify-center min-h-[200px] transition-colors duration-500 ${metrics ? getScoreColor(metrics.score) : 'border-[#333]'}`}>
+                    {!metrics ? (
+                        <div className="text-[#333] text-sm uppercase animate-pulse">Waiting for Input...</div>
+                    ) : (
+                        <>
+                            <div className="text-[100px] leading-none font-['Unbounded'] font-bold tracking-tighter">
+                                {metrics.renderTimeMs}<span className="text-2xl">ms</span>
+                            </div>
+                            <div className="text-xl font-bold uppercase tracking-widest mt-2">{metrics.score}</div>
+                            {metrics.score === 'CRITICAL' && <div className="text-[10px] mt-2 bg-[#FF5F57] text-black px-2 py-1 uppercase font-bold">Recommended: Handbrake Compression</div>}
+                            {metrics.score === 'PERFECT' && <div className="text-[10px] mt-2 bg-[#28C840] text-black px-2 py-1 uppercase font-bold">Ready for Production</div>}
+                        </>
+                    )}
+                </div>
 
-        {/* TEST: FALLBACK */}
-        <div className="border-2 border-green-500 p-4 rounded bg-[#0a1a0a]">
-            <h3 className="font-bold text-xs mb-2 text-green-500">METHOD 3: CDN FALLBACK</h3>
-            <button 
-                onClick={loadFallback}
-                className="w-full py-2 text-xs font-bold border border-green-500 text-green-500 hover:bg-green-900 transition-all"
-            >
-                LOAD EXTERNAL CDN
-            </button>
-        </div>
-
-        {/* TEST: BROWSE */}
-        <div className="border border-white/20 p-4 rounded bg-[#111]">
-            <h3 className="font-bold text-xs mb-2 text-blue-500">METHOD 4: BROWSE FILE</h3>
-            <label className="cursor-pointer w-full py-2 text-xs font-bold border border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-black transition-all flex justify-center items-center">
-                <span>📂 BROWSE FILE</span>
-                <input type="file" onChange={handleFileUpload} accept="video/*" className="hidden" />
-            </label>
-        </div>
-
-      </div>
-
-      <div className="flex flex-col md:flex-row w-full max-w-6xl px-4 gap-6 items-start h-[500px]">
-        
-        {/* PLAYER */}
-        <div className="w-full md:w-1/2 flex flex-col gap-2 h-full">
-            <div className="bg-black border border-white/10 w-full h-full relative flex items-center justify-center overflow-hidden rounded-lg shadow-2xl">
-                <video 
-                    ref={videoRef}
-                    controls
-                    playsInline
-                    loop
-                    className="w-full h-full object-contain"
-                />
-            </div>
-        </div>
-
-        {/* CONSOLE */}
-        <div className="w-full md:w-1/2 bg-[#0a0a0a] border border-white/10 h-full flex flex-col rounded-lg overflow-hidden">
-            <div className="bg-[#111] px-4 py-2 border-b border-white/10 flex justify-between items-center">
-                <span className="text-xs font-bold text-gray-400">SYSTEM LOGS</span>
-                <button onClick={() => setLogs([])} className="text-[10px] text-gray-500 hover:text-white uppercase">Clear</button>
-            </div>
-            <div className="flex-1 p-4 overflow-y-auto font-mono text-xs space-y-2 custom-scrollbar">
-                {logs.length === 0 && <span className="text-gray-700 italic">Ready to run diagnostics...</span>}
-                {logs.map((log, i) => (
-                    <div key={i} className={`${
-                        log.includes("SUCCESS") || log.includes("PLAYING") ? "text-green-400 font-bold" :
-                        log.includes("FAILURE") || log.includes("Error") || log.includes("CRITICAL") ? "text-red-400 font-bold" :
-                        log.includes("FIREBASE") ? "text-orange-400 font-bold" :
-                        log.includes("EXPLANATION") ? "text-yellow-400" :
-                        "text-gray-400"
-                    }`}>
-                        {log}
+                {/* 2. DETAILS GRID */}
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-[#0a0a0a] border border-[#222] p-4">
+                        <div className="text-[10px] text-[#666] uppercase mb-1">File Size</div>
+                        <div className="text-xl font-['Space_Mono']">{metrics ? `${metrics.fileSizeMB} MB` : '--'}</div>
                     </div>
-                ))}
+                    <div className="bg-[#0a0a0a] border border-[#222] p-4">
+                         <div className="text-[10px] text-[#666] uppercase mb-1">Resolution</div>
+                         <div className="text-xl font-['Space_Mono']">{metrics ? metrics.resolution : '--'}</div>
+                    </div>
+                    <div className="bg-[#0a0a0a] border border-[#222] p-4">
+                         <div className="text-[10px] text-[#666] uppercase mb-1">Load Time</div>
+                         <div className="text-xl font-['Space_Mono']">{metrics ? `${metrics.loadTimeMs}ms` : '--'}</div>
+                    </div>
+                    <div className="bg-[#0a0a0a] border border-[#222] p-4">
+                         <div className="text-[10px] text-[#666] uppercase mb-1">Duration</div>
+                         <div className="text-xl font-['Space_Mono']">{metrics ? `${metrics.duration.toFixed(1)}s` : '--'}</div>
+                    </div>
+                </div>
+
+                {/* 3. LOGS CONSOLE */}
+                <div className="flex-1 bg-[#0a0a0a] border border-[#222] p-4 font-mono text-[10px] text-[#666] overflow-y-auto max-h-[300px] custom-scrollbar">
+                    <div className="sticky top-0 bg-[#0a0a0a] border-b border-[#222] pb-2 mb-2 uppercase font-bold text-[#444]">System Log</div>
+                    {logs.map((log, i) => (
+                        <div key={i} className="mb-1">{log}</div>
+                    ))}
+                    {logs.length === 0 && <div>System Ready. Drop file to begin benchmark.</div>}
+                </div>
+
             </div>
-        </div>
+        )}
 
       </div>
     </div>

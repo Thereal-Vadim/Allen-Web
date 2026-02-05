@@ -2,8 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useGSAP } from '@gsap/react';
-import { ref, getDownloadURL } from 'firebase/storage';
-import { storage } from '../firebase';
+import { getCachedVideoUrl } from '../firebase';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -12,29 +11,33 @@ export const Hero: React.FC = () => {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoSrc, setVideoSrc] = useState<string>("");
-  const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const [isVideoReady, setIsVideoReady] = useState(false);
 
-  // CONFIG: Name of file in Firebase Storage Bucket
-  const FIREBASE_FILE_NAME = "hero-video.mp4";
-  
-  // FALLBACK: Reliable CDN link if Firebase fails or is not configured
+  // CONFIG: Fallback link if no firebase file exists
   const FALLBACK_LINK = "https://assets.mixkit.co/videos/preview/mixkit-ink-swirling-in-water-346-large.mp4";
 
   useEffect(() => {
-    const loadVideo = async () => {
+    let active = true;
+
+    const loadStream = async () => {
       try {
-        // Attempt to get the URL from Firebase
-        const storageRef = ref(storage, FIREBASE_FILE_NAME);
-        const url = await getDownloadURL(storageRef);
-        setVideoSrc(url);
+        // 1. Try MP4 first (Most common)
+        const url = await getCachedVideoUrl("hero-video.mp4");
+        if (active) setVideoSrc(url);
       } catch (error) {
-        console.warn("Firebase Load Failed (Check firebase.ts config):", error);
-        // On error, use fallback
-        setVideoSrc(FALLBACK_LINK);
+        // 2. If MP4 fails, try WebM (New upload format)
+        try {
+            const webmUrl = await getCachedVideoUrl("hero-video.webm");
+            if (active) setVideoSrc(webmUrl);
+        } catch (webmError) {
+             console.warn("Hero Load Failed (No MP4 or WebM found), falling back.");
+             if (active) setVideoSrc(FALLBACK_LINK);
+        }
       }
     };
 
-    loadVideo();
+    loadStream();
+    return () => { active = false; };
   }, []);
 
   useGSAP(() => {
@@ -53,23 +56,21 @@ export const Hero: React.FC = () => {
     }
   }, { scope: containerRef });
 
-  const handleVideoError = () => {
-    console.warn(`⚠️ Video source '${videoSrc}' failed to load. Switching to safety fallback.`);
-    
-    // Prevent infinite loop
-    if (videoRef.current && videoRef.current.src !== FALLBACK_LINK) {
-        setVideoSrc(FALLBACK_LINK);
-        videoRef.current.load();
-    }
-  };
-
   return (
     <section 
       ref={containerRef} 
       className="relative h-screen w-full flex flex-col justify-end p-4 md:p-10 overflow-hidden bg-[#050505]"
     >
-      {/* FULLSCREEN BACKGROUND VIDEO */}
-      <div className="absolute inset-0 w-full h-full z-0">
+      {/* 
+         BACKGROUND LAYER 
+         1. Gradient (Always visible, prevents total black screen)
+         2. Video (Fades in when ready)
+      */}
+      <div className="absolute inset-0 w-full h-full z-0 bg-[#080808]">
+        
+        {/* Placeholder Gradient - Visible while video loads */}
+        <div className={`absolute inset-0 bg-gradient-to-b from-[#111] to-[#050505] transition-opacity duration-1000 ${isVideoReady ? 'opacity-0' : 'opacity-100'}`} />
+
         {videoSrc && (
           <video 
             ref={videoRef}
@@ -78,15 +79,17 @@ export const Hero: React.FC = () => {
             muted 
             loop 
             playsInline
-            onError={handleVideoError}
-            onLoadedData={() => setIsVideoLoaded(true)}
-            className={`w-full h-full object-cover transition-opacity duration-1000 ${isVideoLoaded ? 'opacity-50' : 'opacity-0'}`} 
+            preload="auto"
+            // Wait for data to be enough to play smoothly
+            onCanPlay={() => setIsVideoReady(true)}
+            onLoadedData={() => setIsVideoReady(true)}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${isVideoReady ? 'opacity-50' : 'opacity-0'}`} 
           >
             Your browser does not support the video tag.
           </video>
         )}
         
-        {/* Gradient Overlay */}
+        {/* Cinematic Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-transparent opacity-90"></div>
       </div>
 

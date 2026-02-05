@@ -7,6 +7,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- PRECONNECT TO FIREBASE STORAGE FOR FASTER VIDEO LOADING -->
+    <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://www.googleapis.com" crossorigin>
+    
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Unbounded:wght@400;900&display=swap" rel="stylesheet">
     <style>
       :root {
@@ -35,9 +39,29 @@
         background: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
       }
 
-      /* Scrollbar Hiding */
+      /* Scrollbar Hiding Global */
       body::-webkit-scrollbar { display: none; }
       body { -ms-overflow-style: none; scrollbar-width: none; }
+      
+      /* Custom Scrollbar for specific containers */
+      .custom-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: #333 #111;
+      }
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+        display: block; /* Force display */
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #111;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #333;
+        border-radius: 3px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #f4f4f2;
+      }
       
       .lenis.lenis-smooth { scroll-behavior: auto !important; }
       .lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
@@ -56,6 +80,7 @@
     "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
     "firebase/storage": "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js",
     "firebase/analytics": "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js",
+    "firebase/database": "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js",
     "firebase/": "https://esm.sh/firebase@^12.8.0/"
   }
 }
