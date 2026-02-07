@@ -6,6 +6,8 @@ import { Hero } from './components/Hero';
 import { WorkSection } from './components/WorkSection';
 import { WorkPage } from './components/WorkPage';
 import { AboutPage } from './components/AboutPage';
+import { ContactPage } from './components/ContactPage';
+import { PricesPage } from './components/PricesPage';
 import { Preloader } from './components/Preloader';
 import { AdminLogin } from './components/AdminLogin';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -179,7 +181,11 @@ const App: React.FC = () => {
         
         {currentView === 'work' && <WorkPage />}
         
+        {currentView === 'prices' && <PricesPage onNavigate={setCurrentView} />}
+        
         {currentView === 'about' && <AboutPage />}
+
+        {currentView === 'contact' && <ContactPage />}
         
         {currentView === 'admin' && (
           !isLoggedIn ? (

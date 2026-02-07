@@ -19,7 +19,7 @@ export interface CursorContextType {
   setCursorType: (type: 'default' | 'hover' | 'video') => void;
 }
 
-export type NavView = 'home' | 'work' | 'about' | 'admin';
+export type NavView = 'home' | 'work' | 'prices' | 'about' | 'contact' | 'admin';
 
 // --- ABOUT PAGE TYPES ---
 

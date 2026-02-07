@@ -34,6 +34,19 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
           </span>
         </button>
 
+        {/* PRICES LINK */}
+        <button 
+          onClick={() => onNavigate('prices')} 
+          className={`group block overflow-hidden h-5 relative text-right ${currentView === 'prices' ? 'font-bold' : 'opacity-70 hover:opacity-100'}`}
+        >
+          <span className="block transition-transform duration-500 group-hover:-translate-y-full">
+            Services / Prices
+          </span>
+          <span className="block absolute top-0 right-0 translate-y-full transition-transform duration-500 group-hover:translate-y-0">
+            Services / Prices
+          </span>
+        </button>
+
         {/* ABOUT LINK */}
         <button 
           onClick={() => onNavigate('about')} 
@@ -47,13 +60,10 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
           </span>
         </button>
 
-        {/* CONTACT LINK (Just scrolls to footer on home for now, or could be a modal) */}
+        {/* CONTACT LINK */}
         <button 
-           onClick={() => {
-               onNavigate('home');
-               setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 100);
-           }}
-           className="group block overflow-hidden h-5 relative text-right opacity-70 hover:opacity-100"
+           onClick={() => onNavigate('contact')}
+           className={`group block overflow-hidden h-5 relative text-right ${currentView === 'contact' ? 'font-bold' : 'opacity-70 hover:opacity-100'}`}
         >
           <span className="block transition-transform duration-500 group-hover:-translate-y-full">
             Contact / Contact
